@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function untuk memeriksa apakah user adalah Admin Kecamatan
+    function isKecamatanAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin_kecamatan';
+    }
+    
+    // Helper function untuk memeriksa apakah user adalah Admin Desa
+    function isDesaAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin_desa';
+    }
+    
+    // Helper function untuk mendapatkan data desa milik admin yang sedang login
+    function getUserDesa() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.desa;
+    }
+
+    // Aturan untuk koleksi 'users'
+    match /users/{userId} {
+      // Siapa saja yang sudah login bisa membaca datanya sendiri. Admin Kecamatan bisa membaca semua.
+      allow read: if request.auth.uid == userId || isKecamatanAdmin();
+      // Hanya Admin Kecamatan yang bisa membuat user baru.
+      allow create: if isKecamatanAdmin();
+      // User bisa mengupdate datanya sendiri. Admin Kecamatan bisa mengupdate semua.
+      allow update: if request.auth.uid == userId || isKecamatanAdmin();
+      // Hanya Admin Kecamatan yang bisa menghapus user.
+      allow delete: if isKecamatanAdmin();
+    }
+
+    // Aturan untuk koleksi 'perangkat'
+    match /perangkat/{perangkatId} {
+      // Boleh membaca jika:
+      allow read: if isKecamatanAdmin() || // dia adalah Admin Kecamatan
+                     (isDesaAdmin() && getUserDesa() == resource.data.desa); // atau dia Admin Desa dari desa yang bersangkutan.
+      
+      // Boleh menulis (create, update, delete) jika:
+      allow write: if isKecamatanAdmin() || // dia adalah Admin Kecamatan
+                      (isDesaAdmin() && getUserDesa() == request.resource.data.desa); // atau dia Admin Desa dari desa yang bersangkutan.
+    }
+
+    // Aturan untuk koleksi 'settings'
+    match /settings/{settingId} {
+      // Siapa saja yang sudah login boleh membaca semua dokumen pengaturan.
+      allow read: if request.auth != null;
+      
+      // Hanya Admin Kecamatan yang boleh menulis (mengubah) semua dokumen pengaturan.
+      allow write: if isKecamatanAdmin();
+    }
+  }
+}
